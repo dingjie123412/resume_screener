@@ -19,8 +19,13 @@ load_dotenv(".env.resume")
 def get_secret(key: str, default: str = "") -> str:
     """获取配置值，优先从 Streamlit Secrets 获取"""
     try:
-        return st.secrets[key]
-    except (AttributeError, KeyError):
+        # 检查 st.secrets 是否可用（Streamlit Cloud 环境）
+        if hasattr(st, 'secrets') and st.secrets is not None:
+            return st.secrets.get(key, os.getenv(key, default))
+        else:
+            return os.getenv(key, default)
+    except Exception:
+        # 本地运行时可能没有 secrets.toml，直接返回环境变量
         return os.getenv(key, default)
 
 DEEPSEEK_API_KEY = get_secret("DEEPSEEK_API_KEY", "")
@@ -370,7 +375,31 @@ def main():
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ API配置")
     
-    st.session_state.api_key = st.sidebar.text_input("API Key", value=st.session_state.api_key, type="password", placeholder="请输入DeepSeek API Key")
+    # API Key 显示脱敏版本（前4位 + 中间* + 后4位）
+    def mask_api_key(key):
+        if len(key) <= 8:
+            return "*" * len(key)
+        return key[:4] + "*" * (len(key) - 8) + key[-4:]
+    
+    # 如果已有API Key，显示脱敏版本；否则显示空
+    displayed_key = mask_api_key(st.session_state.api_key) if st.session_state.api_key else ""
+    
+    # 可编辑的文本输入框显示脱敏的API Key
+    new_key_input = st.sidebar.text_input(
+        "API Key", 
+        value=displayed_key, 
+        placeholder="请输入DeepSeek API Key"
+    )
+    
+    # 如果用户输入了新内容（不是脱敏格式），更新实际的API Key
+    if new_key_input:
+        # 如果输入的不是脱敏格式（不含*），认为是新的完整Key
+        if "*" not in new_key_input:
+            st.session_state.api_key = new_key_input
+        # 如果输入的是空，清空API Key
+    else:
+        st.session_state.api_key = ""
+    
     st.session_state.base_url = st.sidebar.text_input("API Base URL", value=st.session_state.base_url, placeholder="例如：https://api.deepseek.com")
     st.session_state.model = st.sidebar.text_input("模型名称", value=st.session_state.model, placeholder="例如：deepseek-v4-flash")
     
